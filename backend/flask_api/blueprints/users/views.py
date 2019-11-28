@@ -71,6 +71,12 @@ def show(user_id):
     } 
     return success_201(f"Returned details of user with id: {data['id']}", data)
 
+
+@users_api_blueprint.route('/version', methods=['GET'])
+def version():
+    return success_200("v1.1")
+
+
 @users_api_blueprint.route('/<user_id>', methods=['POST'])
 @jwt_required
 def update(user_id):
@@ -114,9 +120,6 @@ def update(user_id):
     else:
         return error_401('User details cannot be empty!')
 
-@users_api_blueprint.route('/version', methods=['GET'])
-def version():
-    return success_200("v1.1")
 
 # @users_api_blueprint.route('/<user_id>', methods=['POST'])
 # @jwt_required
