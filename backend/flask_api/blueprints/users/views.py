@@ -6,19 +6,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 users_api_blueprint = Blueprint('users_api', __name__)
 
-@users_api_blueprint.route('/', methods=['GET'])
-def index():
-    # Return list of users' details
-    users = [ 
-        {
-            'id': user.id,
-            'name': user.name,
-            'email': user.email,
-            'profile_picture': user.profile_picture
-        } for user in User.select()
-    ]
-    return success_200(users)
-
 @users_api_blueprint.route('/signup', methods=['POST'])
 def new():
     # Check for valid json
@@ -59,6 +46,19 @@ def new():
     else:
         return error_401('Invalid input!')
 
+@users_api_blueprint.route('/', methods=['GET'])
+def index():
+    # Return list of users' details
+    users = [ 
+        {
+            'id': user.id,
+            'name': user.name,
+            'email': user.email,
+            'profile_picture': user.profile_picture
+        } for user in User.select()
+    ]
+    return success_200(users)
+
 @users_api_blueprint.route('/<user_id>', methods=['GET'])
 def show(user_id):
     # Return user details
@@ -70,9 +70,6 @@ def show(user_id):
         'profile_picture': user.profile_picture
     } 
     return success_201(f"Returned details of user with id: {data['id']}", data)
-
-
-
 
 @users_api_blueprint.route('/<user_id>', methods=['POST'])
 @jwt_required
@@ -117,10 +114,6 @@ def update(user_id):
     else:
         return error_401('User details cannot be empty!')
 
-
-@users_api_blueprint.route('/version', methods=['GET'])
-def version():
-    return success_200("v1.4")
 # @users_api_blueprint.route('/<user_id>', methods=['POST'])
 # @jwt_required
 # def update_profile_picture(user_id):

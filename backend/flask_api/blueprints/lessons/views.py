@@ -1,42 +1,49 @@
 from flask import Blueprint, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from flask_api.util.helpers import upload_file_to_s3
+from flask_api.util.s3 import *
 from flask_api.util.response import *
 from models.user import User
 from models.lesson import Lesson
 from models.skill import Skill
+from werkzeug.utils import secure_filename
 
 lessons_api_blueprint = Blueprint('lessons_api', __name__)
 
 @lessons_api_blueprint.route('/create', methods=['POST'])
 @jwt_required
 def create():
-    # Check for valid json
-    if not request.is_json:
-       return error_401("Reponse is not JSON")
-
     # Check if user exists and signed in
     jwt_user = get_jwt_identity()
     user = User.get_or_none(User.name == jwt_user)
     if not user:
-       return error_401("Unauthorized action")
+        return error_401("Unauthorized action")
 
     # Retrieve data from json
-    data = request.get_json()
-
-    title = data['title'] 
-    description = data['description'] 
-    if (str(data['teach']) == "True"):
+    title = request.form.get("title")
+    description = request.form.get("description")
+    if (str(request.form.get("teach")) == "true"):
         teach = True
-    elif (str(data['teach']) == "False"):
+    elif (str(request.form.get("teach")) == "false"):
         teach = False
     else:
         return error_401("Invalid teach input")
-    skill = data['skill']
+    skill = request.form.get("skill")
+
+    # Retrieve image from json 
+    image_valid = False
+    if "image" in request.files:
+        image_file = request.files['image']
+        if image_file and allowed_file(image_file.filename):
+            image_file.filename = secure_filename(image_file.filename)
+            output   	  = upload_file_to_s3(image_file)
+            image_valid = True
 
     # Check title and description and then create new lesson
     if title and description:
-        lesson = Lesson(title=title, description=description, teach=teach, owner=user, skill=skill)
+        if image_valid:
+            lesson = Lesson(title=title, description=description, teach=teach, owner=user, skill=skill, image=image_file.filename)
+        else:
+            lesson = Lesson(title=title, description=description, teach=teach, owner=user, skill=skill)
         if lesson.save():
             lesson = {
                 'id': lesson.id,
@@ -44,8 +51,11 @@ def create():
                 'description': lesson.description,
                 'rating': lesson.rating,
                 'teach': lesson.teach,
-                'owner': lesson.owner_id,
-                'skill': lesson.skill_id
+                'owner_id': lesson.owner_id,
+                'owner_name': lesson.owner.name,
+                'skill_id': lesson.skill_id,
+                'skill_name': lesson.skill.name,
+                'image_url': lesson.image_url
             }
             return success_201("New lesson created successfully", lesson) 
         else:
@@ -62,15 +72,43 @@ def index():
             'title': lesson.title,
             'description': lesson.description,
             'rating': lesson.rating,
-            'owner': lesson.owner_id,
-            'teach': lesson.teach
+            'owner_id': lesson.owner_id,
+            'owner_name': lesson.owner.name,
+            'teach': lesson.teach,
+            'skill_id': lesson.skill_id,
+            'skill_name': lesson.skill.name,
+            'image_url': lesson.image_url
         } for lesson in Lesson.select()
     ]
+    return success_200(lessons)
 
-    if lessons:
-        return success_200(lessons)
+@lessons_api_blueprint.route('/filter', methods=['GET'])
+def index_with_filter():
+    # Retrieve arguments
+    teach = request.args.get('teach')
+    if (teach == "true"):
+        teach_option = True
+    elif (teach == "false"):
+        teach_option = False
     else:
-        return error_404("No lessons found")
+        return error_401("Invalid teach input")
+
+    # Retrieve lessons from database
+    lessons = [ 
+        {
+            'id': lesson.id,
+            'title': lesson.title,
+            'description': lesson.description,
+            'rating': lesson.rating,
+            'owner_id': lesson.owner_id,
+            'owner_name': lesson.owner.name,
+            'teach': lesson.teach,
+            'skill_id': lesson.skill_id,
+            'skill_name': lesson.skill.name,
+            'image_url': lesson.image_url
+        } for lesson in Lesson.select().where(Lesson.teach == teach_option)
+    ]
+    return success_200(lessons)
 
 @lessons_api_blueprint.route('/<lesson_id>', methods=['GET'])
 def show(lesson_id):
@@ -84,8 +122,11 @@ def show(lesson_id):
             'description': lesson.description,
             'rating': lesson.rating,
             'teach': lesson.teach,
-            'owner': lesson.owner_id,
-            'skill': lesson.skill_id
+            'owner_id': lesson.owner_id,
+            'owner_name': lesson.owner.name,
+            'skill_id': lesson.skill_id,
+            'skill_name': lesson.skill.name,
+            'image_url': lesson.image_url
         }
         return success_200(data)
     else:
@@ -124,28 +165,36 @@ def update(lesson_id):
 def search_lessons():
 
     search_value = request.args['search_value']
-    print(search_value)
 
     list_of_skills = []
     final_lessons_list = []
     
-    split_search_value = search_value.split(" ")
+    split_search_value = search_value.split(" ") #This is a list []
 
     for word in split_search_value: #loop through the split search string
-        for lesson in Lesson: #loop through all rows in Lesson
-            if lesson.teach:
+            for lesson in Lesson: #loop through all rows in Lesson
+
                 if (word in lesson.title) or (word in lesson.skill): #if a word from the split search string is part of the lesson title, append it to a list
                     final_lessons_list.append(lesson)
-    
-    data = [
-        {'lesson': {
-            'id': lesson.id,
-            'description': lesson.decription,
-            'rating': lesson.rating,
-            'owner': lesson.owner_id
-        }} for lesson in final_lessons_list
-    ]
-    return success_201('success testing', data)
+
+                    
+    if len(final_lessons_list) > 0:
+        
+        data = [
+            {
+                'id': lesson.id,
+                'title' : lesson.title,
+                'description' : lesson.description,
+                'rating' : lesson.rating,
+                'teach' : lesson.teach,
+                'owner' : lesson.owner,
+                'skill' : lesson.skill,
+                'image' : lesson.image
+            } for lesson in final_lessons_list
+        ]
+        return success_201('success testing', data)
+    else:
+        return error_401('No lessons match your search query')
     
 @lessons_api_blueprint.route('/add_image', methods=['POST'])
 @jwt_required
