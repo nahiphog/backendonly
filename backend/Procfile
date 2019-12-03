@@ -1,1 +1,1 @@
-web: python migrate.py; gunicorn start:app --preload
+heroku run python migrate.py --app next-project
